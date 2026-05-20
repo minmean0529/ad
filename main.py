@@ -2,7 +2,10 @@ import csv
 import re
 import sys
 
-# 1. 보건복지부 기준 일일 상한선 (Red Card 기준치)
+# =========================================================
+# [1] 영양소 일일 상한선 (보건복지부 기준)
+# =========================================================
+
 UPPER_LIMITS = {
     "비타민B6(mg)": 100,
     "비타민D(㎍)": 100,
@@ -37,7 +40,56 @@ class KioskBrain:
                     db[barcode] = {
                         "name": row[key_name].strip(),
                         "category": row[category_name].strip(),
-                        "raw_contents": row[content_name].strip()
+                      // 수정  "raw_contents": row[content_name].strip()
+                          db[barcode] = row 
+                          db[barcode] = {
+                              "name": row["제품명"],
+                              "category": row["카테고리"],
+                              "nutrients":{
+                                  "비타민A(mcg)": float(row["비타민A(mcg)"] or 0),
+                                  "비타민C(mg)" : float(row["비타민C(mg)"] or 0),
+                                  "베타카로틴(mcg)" : float(row["베타카로틴(mcg)"] or 0),
+                                  "비타민D(mcg)": float(row["비타민D(mcg)"] or 0),
+                                  "식물성 비타민D2(mcg)" : float(row["식물성 비타민D2(mcg)"] or 0),
+                                  "동물성 비타민D3(mcg)" : float(row["동물성 비타민D3(mcg)"] or 0),
+                                  "비타민E(mgα-TE)" : float(row["비타민E(mgα-TE)"] or 0),
+                                  "비타민K(mcg)" : float(row["비타민K(mcg)"] or 0),
+                                  "비타민B1(mg)" : float(row["비타민B1(mg)"] or 0),
+                                  "비타민B2(mg)" : float(row["비타민B2(mg)"] or 0),
+                                  "비타민B3(mg)" : float(row["비타민B3(mg)"] or 0),
+                                  "비타민B6(mg)" : float(row["비타민B6(mg)"] or 0),
+                                  "비타민B9(mcg DFE)" : float(row["비타민B9(mcg DFE)"] or 0),
+                                  "비타민B12(mcg)" : float(row["비타민B12(mcg)"] or 0),
+                                  "비타민B7(mcg)" : float(row["비타민B7(mcg)"] or 0),
+                                  "비타민B5(mg)" : float(row["비타민B5(mg)"] or 0),
+                                  "콜린(mg)" : float(row["콜린(mg)"] or 0),
+                                  "요도드(mcg)" : float(row["요오드(mcg)"] or 0),
+                                  "철분(mg)" : float(row["철분(mg)"] or 0),
+                                  "아연(mg)" : float(row["아연(mg)"] or 0),
+                                  "마그네슘(mg)" : float(row["마그네슘(mg)"] or 0),
+                                  "셀레늄(mcg)" : flaot(row["셀레늄(mcg)"] or 0),
+                                  "구리(mcg)" : float(row["구리(mcg)"] or 0),
+                                  "망간(mg)" : float(row["망간(mg)"] or 0),
+                                  "크롬(mcg)" : float(row["크롬(mcg)"] or 0),
+                                  "소듐(mcg)" : float(row["소듐(mcg)"] or 0),
+                                  "포타슘(mg)" : float(row["포타슘(mg)"] or 0),
+                                  "인(mg)": float(row["인(mg)"] or 0),
+                                  "D-감마 토코페롤(mg)" : float(row["D-감마 토코페롤(mg)"] or 0),
+                                  "붕소(mg)" : float(row["붕소(mg)"] or 0),
+                                  "몰리브덴(mcg)" : float(row["볼리브덴(mcg)"] or 0),
+                                  "프로바이오틱스(CFU)" : float(row["프로바이오틱스(CFU)"] or 0),
+                                  "칼슘(mg)" : float(row["칼슘(mg)"] or 0),
+                                  "EPA + DHA(mg)" : float(row["EPA + DHA(mg)"] or 0),
+                                  "단백질(g)" : float(row["단백질(g)"] or 0),
+                                  "루테인(mg)" : float(row["루테인(mg)"] or 0),
+                                  "총지아잔틴(mg)" : float(row["총지아잔틴(mg)"] or 0),
+                                  "아스타잔틴(mg)" : float(row["아스타잔틴(mg)"] or 0),
+                                  "L-류신(mg)" : float(row["L-류신(mg)"] or 0),
+                                  "L-글루타민(mg)" : float(row["L-글루타민(mg)"] or 0),
+                                  "L-이소류신(mg)" : float(row["L-이소류신(mg)"] or 0),
+                                  "L-발린(mg)" : float(row["L-발린(mg)"] or 0)
+                                                        
+                                  
                     }
             print(f"✅ 데이터베이스 로드 완료! (총 {len(db)}개 제품)")
             return db
