@@ -1,693 +1,432 @@
 import tkinter as tk
-from tkinter import font
+from tkinter import messagebox
 import csv
+import threading
+import time
 
-# =========================================================
-# [1] 영양소 일일 상한선 데이터
-# =========================================================
+try:
+    import serial
+    SERIAL_AVAILABLE = True
+except ImportError:
+    SERIAL_AVAILABLE = False
+    print("💡 [시스템 알림] pyserial 라이브러리가 감지되지 않아 가상 모드로 전환합니다.")
 
+from kiosk_ui import KioskApp
+
+
+# 대한민국 식약처 및 의학 기준 영양소 일일 상한 섭취량 (UL)
 SAFE_LIMITS = {
-    "남성": { 
+
+    "남성": {
         "베타카로틴(mcg)": 7000.0,
-        "비타민 A(mcg)":  3000.0,
-        "비타민 C(mg)": 2000.0, 
-        "비타민 D(mcg)": 100.0, 
-        "식물성 비타민D2(mcg)": 
-        "동물성 비타민D3(mcg)": 100.0, 
-        "비타민E(mgα-TE)": 1000.0, 
-        "비타민K(mcg)": 120.0, 
-        "비타민B1(mg)": 1.20, 
-        "비타민B2(mg)": 1.50, 
-        "비타민B3(mg)": 35.0, 
-        "비타민B6(mg)": 100.0, 
-        "비타민B9(mcg DFE)": 1000.0, 
-        "비타민B12(mcg)": 500.0, 
-        "비타민B7(mcg)": 300.0, 
-        "비타민B5(mg)": 10.0, 
-        "콜린(mg)": 595.0, 
-        "요오드(mcg)": 1100.0, 
-        "철분(mg)": 45.0, 
-        "아연(mg)": 40.0, 
-        "셀레늄(mcg)": 400.0, 
-        "구리(mcg)": 10000.0, 
-        "망간(mg)": 11.0, 
-        "크롬(mcg)": 35.0, 
-        "소듐(mg)": 2300.0, 
-        "포타슘(mg)": 3500.0, 
-        "인(mg)": 4000.0, 
-        "D-감마 토코페롤(mg)": 1000.0, 
-        "붕소(mg)": 20.0, 
-        "몰리브덴(mcg)":  2000.0, 
-        "프로바이오틱스(CFU)": 100000000.0, 
-        "칼슘(mg)": 2500.0, 
-        "EPA + DHA(mg)": 1000.0, 
-        "단백질(g)": 2.50, 
-        "루테인(mg)": 20.0, 
-        "총지아잔틴(mg)": 2.0, 
-        "아스타잔틴(mg)": 12.0, 
-        "L-류신(mg)": 42.0,     
-        "L-글루타민(mg)": 14000.0, 
-        "L-이소류신(mg)": 72.0, 
-        "L-발린(mg)": 26.0,      
-        "마그네슘(mg)": 350.0   
-    
+        "비타민A(mcg)": 3000.0,
+        "비타민C(mg)": 2000.0,
+        "비타민D(mcg)": 100.0,
+        "식물성 비타민D2(mcg)": 10000.0,
+        "동물성 비타민D3(mcg)": 100.0,
+        "비타민E(mgα-TE)": 1000.0,
+        "비타민K(mcg)": 120.0,
+        "비타민B1(mg)": 1.2,
+        "비타민B2(mg)": 1.5,
+        "비타민B3(mg)": 35.0,
+        "비타민B6(mg)": 100.0,
+        "비타민B9(mcg DFE)": 1000.0,
+        "비타민B12(mcg)": 500.0,
+        "비타민B7(mcg)": 30.0,
+        "비타민B5(mg)": 10.0,
+        "콜린(mg)": 595.0,
+        "요오드(mcg)": 1100.0,
+        "철분(mg)": 45.0,
+        "아연(mg)": 40.0,
+        "셀레늄(mcg)": 400.0,
+        "구리(mcg)": 10000.0,
+        "망간(mg)": 11.0,
+        "크롬(mcg)": 35.0,
+        "소듐(mg)": 2300.0,
+        "포타슘(mg)": 3500.0,
+        "인(mg)": 4000.0,
+        "D-감마 토코페롤(mg)": 1000.0,
+        "붕소(mg)": 20.0,
+        "몰리브덴(mcg)": 2000.0,
+        "프로바이오틱스(CFU)": 100000000.0,
+        "칼슘(mg)": 2500.0,
+        "EPA + DHA(mg)": 1000.0,
+        "단백질(g)": 100.0,
+        "루테인(mg)": 20.0,
+        "총지아잔틴(mg)": 2.0,
+        "아스타잔틴(mg)": 12.0,
+        "L-류신(mg)": 10000.0,
+        "L-글루타민(mg)": 20000.0,
+        "L-이소류신(mg)": 10000.0,
+        "L-발린(mg)": 5000.0,
+        "마그네슘(mg)": 350.0
     },
 
     "여성": {
-        "베타카로틴(mcg)": 7000.0, 
-        "비타민A(mcg)": 3000.0, 
-        "비타민C(mg)": 2000.0, 
-        "비타민D(mcg)": 100.0, 
-        "식물성 비타민D2(mcg)": 100.0, 
-        "동물성 비타민D3(mcg)": 100.0, 
-        "비타민E(mgα-TE)": 540.0, 
-        "비타민K(mcg)": 90.0, 
-        "비타민B1(mg)": 5.0, 
-        "비타민B2(mg)": 10.0, 
-        "비타민B3(mg)": 35.0, 
-        "비타민B6(mg)": 100.0, 
-        "비타민B9(mcg DFE)": 1000.0, 
-        "비타민B12(mcg)": 500.0, 
-        "비타민B7(mcg)": 30.0, 
-        "비타민B5(mg)": 10.0, 
-        "콜린(mg)": 425.0, 
-        "요오드(mcg)": 1100.0, 
-        "철분(mg)": 14.0, 
-        "아연(mg)": 40.0, 
-        "셀레늄(mcg)": 400.0, 
-        "구리(mcg)": 10000.0, 
-        "망간(mg)": 2.0, 
-        "크롬(mcg)": 150.0, 
-        "소듐(mg)": 2000.0, 
-        "포타슘(mg)": 3500.0, 
-        "인(mg)": 4000.0, 
-        "D-감마 토코페롤(mg)": 1000.0, 
-        "붕소(mg)": 20.0, 
-        "몰리브덴(mcg)": 2000.0, 
-        "프로바이오틱스(CFU)": 1000000000.0, 
-        "칼슘(mg)": 2500.0, 
-        "EPA + DHA(mg)": 500.0, 
-        "단백질(g)": 1.50, 
-        "루테인(mg)": 20.0, 
-        "총지아잔틴(mg)": 2.0, 
-        "아스타잔틴(mg)": 12.0, 
-        "L-류신(mg)": 2000.0,     
-        "L-글루타민(mg)": 10000.0, 
-        "L-이소류신(mg)": 2200.0, 
-        "L-발린(mg)": 1560.0,      
-        "마그네슘(mg)": 350.0  
+        "베타카로틴(mcg)": 7000.0,
+        "비타민A(mcg)": 3000.0,
+        "비타민C(mg)": 2000.0,
+        "비타민D(mcg)": 100.0,
+        "식물성 비타민D2(mcg)": 10000.0,
+
+        # 수정됨 (기존 1.1 → 100.0)
+        "동물성 비타민D3(mcg)": 100.0,
+
+        "비타민E(mgα-TE)": 540.0,
+        "비타민K(mcg)": 90.0,
+        "비타민B1(mg)": 5.0,
+        "비타민B2(mg)": 1.2,
+        "비타민B3(mg)": 35.0,
+        "비타민B6(mg)": 100.0,
+        "비타민B9(mcg DFE)": 1000.0,
+        "비타민B12(mcg)": 500.0,
+        "비타민B7(mcg)": 30.0,
+        "비타민B5(mg)": 10.0,
+        "콜린(mg)": 425.0,
+        "요오드(mcg)": 1100.0,
+        "철분(mg)": 45.0,
+        "아연(mg)": 40.0,
+        "셀레늄(mcg)": 400.0,
+        "구리(mcg)": 10000.0,
+        "망간(mg)": 11.0,
+        "크롬(mcg)": 25.0,
+        "소듐(mg)": 2300.0,
+        "포타슘(mg)": 3500.0,
+        "인(mg)": 4000.0,
+        "D-감마 토코페롤(mg)": 1000.0,
+        "붕소(mg)": 20.0,
+        "몰리브덴(mcg)": 2000.0,
+        "프로바이오틱스(CFU)": 100000000.0,
+        "칼슘(mg)": 2500.0,
+        "EPA + DHA(mg)": 500.0,
+        "단백질(g)": 100.0,
+        "루테인(mg)": 20.0,
+        "총지아잔틴(mg)": 2.0,
+        "아스타잔틴(mg)": 12.0,
+        "L-류신(mg)": 10000.0,
+        "L-글루타민(mg)": 20000.0,
+        "L-이소류신(mg)": 10000.0,
+        "L-발린(mg)": 5000.0,
+        "마그네슘(mg)": 350.0
     }
 }
 
-
-# =========================================================
-# [2] CSV 숫자 변환 안전 함수
-# =========================================================
-
-def safe_float(value):
-    """
-    빈칸, '-', None 등을 안전하게 0으로 변환
-    """
-    try:
-        value = str(value).strip()
-
-        if value == "" or value == "-":
-            return 0.0
-
-        return float(value)
-
-    except:
-        return 0.0
-
-
-# =========================================================
-# [3] 데이터 엔진
-# =========================================================
 
 class KioskBrain:
 
     def __init__(self, csv_file_path):
 
         self.db = []
-
         self.cart = []
 
         self.gender = "남성"
+        self.height = 0.0
+        self.weight = 0.0
+        self.bmi = 0.0
 
-        # 현재 누적 영양소
         self.current_nutrients = {}
-
-        # 모든 영양소 0 초기화
-        for nutrient in SAFE_LIMITS["남성"]:
-            self.current_nutrients[nutrient] = 0.0
 
         self.load_data(csv_file_path)
 
-    # -----------------------------------------------------
-    # CSV 로드
-    # -----------------------------------------------------
+    # 안전한 숫자 변환
+    def safe_float(self, value):
+
+        try:
+
+            if value is None:
+                return 0.0
+
+            value = str(value).replace(",", "").strip()
+
+            if value == "":
+                return 0.0
+
+            return float(value)
+
+        except ValueError:
+            return 0.0
+
     def load_data(self, file_path):
 
         try:
+
             with open(file_path, 'r', encoding='utf-8-sig') as f:
 
                 reader = csv.DictReader(f)
 
-                for i, row in enumerate(reader):
+                for row in reader:
 
-                    # =========================================
-                    # 나중에 실제 바코드 컬럼으로 변경
-                    #
-                    # 예시:
-                    # barcode = row["바코드"]
-                    # =========================================
-                    barcode = str(1000 + i)
+                    def get_val(column_name):
+                        return self.safe_float(
+                            row.get(column_name, 0.0)
+                        )
 
-                    item = {
+                    self.db.append({
 
-                        "barcode": barcode,
+                        "category": row.get(
+                            '카테고리',
+                            ''
+                        ).strip(),
 
-                        "category": row["카테고리"].strip(),
+                        "name": row.get(
+                            '제품명 (브랜드)',
+                            ''
+                        ).strip(),
 
-                        "name": row["제품명 (브랜드)"].strip(),
-
-                        # =====================================
-                        # 모든 영양소 저장
-                        # =====================================
                         "nutrients": {
 
-                            "베타카로틴(mcg)":
-                                safe_float(row["베타카로틴(mcg)"]),
-
-                            "비타민A(mcg)":
-                                safe_float(row["비타민A(mcg)"]),
-
-                            "비타민C(mg)":
-                                safe_float(row["비타민C(mg)"]),
-
-                            "비타민D(mcg)":
-                                safe_float(row["비타민D(mcg)"]),
-
-                            "식물성 비타민D2(mcg)":
-                                safe_float(row["식물성 비타민D2(mcg)"]),
-
-                            "동물성 비타민D3(mcg)":
-                                safe_float(row["동물성 비타민D3(mcg)"]),
-
-                            "비타민E(mgα-TE)":
-                                safe_float(row["비타민E(mgα-TE)"]),
-
-                            "비타민K(mcg)":
-                                safe_float(row["비타민K(mcg)"]),
-
-                            "비타민B1(mg)":
-                                safe_float(row["비타민B1(mg)"]),
-
-                            "비타민B2(mg)":
-                                safe_float(row["비타민B2(mg)"]),
-
-                            "비타민B3(mg)":
-                                safe_float(row["비타민B3(mg)"]),
-
-                            "비타민B6(mg)":
-                                safe_float(row["비타민B6(mg)"]),
-
-                            "비타민B9(mcg DFE)":
-                                safe_float(row["비타민B9(mcg DFE)"]),
-
-                            "비타민B12(mcg)":
-                                safe_float(row["비타민B12(mcg)"]),
-
-                            "비타민B7(mcg)":
-                                safe_float(row["비타민B7(mcg)"]),
-
-                            "비타민B5(mg)":
-                                safe_float(row["비타민B5(mg)"]),
-
-                            "콜린(mg)":
-                                safe_float(row["콜린(mg)"]),
-
-                            "요오드(mcg)":
-                                safe_float(row["요오드(mcg)"]),
-
-                            "철분(mg)":
-                                safe_float(row["철분(mg)"]),
-
-                            "아연(mg)":
-                                safe_float(row["아연(mg)"]),
-
-                            "마그네슘(mg)":
-                                safe_float(row["마그네슘(mg)"]),
-
-                            "셀레늄(mcg)":
-                                safe_float(row["셀레늄(mcg)"]),
-
-                            "구리(mcg)":
-                                safe_float(row["구리(mcg)"]),
-
-                            "망간(mg)":
-                                safe_float(row["망간(mg)"]),
-
-                            "크롬(mcg)":
-                                safe_float(row["크롬(mcg)"]),
-
-                            "소듐(mg)":
-                                safe_float(row["소듐(mg)"]),
-
-                            "포타슘(mg)":
-                                safe_float(row["포타슘(mg)"]),
-
-                            "인(mg)":
-                                safe_float(row["인(mg)"]),
-
-                            "D-감마 토코페롤(mg)":
-                                safe_float(row["D-감마 토코페롤(mg)"]),
-
-                            "붕소(mg)":
-                                safe_float(row["붕소(mg)"]),
-
-                            "몰리브덴(mcg)":
-                                safe_float(row["몰리브덴(mcg)"]),
-
-                            "프로바이오틱스(CFU)":
-                                safe_float(row["프로바이오틱스(CFU)"]),
-
-                            "칼슘(mg)":
-                                safe_float(row["칼슘(mg)"]),
-
-                            "EPA+DHA(mg)":
-                                safe_float(row["EPA+DHA(mg)"]),
-
-                            "단백질(g)":
-                                safe_float(row["단백질(g)"]),
-
-                            "루테인(mg)":
-                                safe_float(row["루테인(mg)"]),
-
-                            "총지아잔틴(mg)":
-                                safe_float(row["총지아잔틴(mg)"]),
-
-                            "아스타잔틴(mg)":
-                                safe_float(row["아스타잔틴(mg)"]),
-
-                            "L-류신(mg)":
-                                safe_float(row["L-류신(mg)"]),
-
-                            "L-글루타민(mg)":
-                                safe_float(row["L-글루타민(mg)"]),
-
-                            "L-이소류신(mg)":
-                                safe_float(row["L-이소류신(mg)"]),
-
-                            "L-발린(mg)":
-                                safe_float(row["L-발린(mg)"])
+                            "베타카로틴(mcg)": get_val('베타카로틴 (mcg)'),
+                            "비타민A(mcg)": get_val('비타민 A (mcg)'),
+                            "비타민C(mg)": get_val('비타민 C (mg)'),
+                            "비타민D(mcg)": get_val('비타민 D (mcg)'),
+                            "식물성 비타민D2(mcg)": get_val('식물성 비타민 D2 (mcg)'),
+                            "동물성 비타민D3(mcg)": get_val('동물성 비타민 D3 (mcg)'),
+                            "비타민E(mgα-TE)": get_val('비타민 E (mgα-TE)'),
+                            "비타민K(mcg)": get_val('비타민 K (mcg)'),
+                            "비타민B1(mg)": get_val('비타민 B1 (mg)'),
+                            "비타민B2(mg)": get_val('비타민 B2 (mg)'),
+                            "비타민B3(mg)": get_val('비타민 B3 (mg)'),
+                            "비타민B6(mg)": get_val('비타민 B6 (mg)'),
+                            "비타민B9(mcg DFE)": get_val('비타민 B9 (mcg DFE)'),
+                            "비타민B12(mcg)": get_val('비타민 B12 (mcg)'),
+                            "비타민B7(mcg)": get_val('비타민 B7 (mcg)'),
+                            "비타민B5(mg)": get_val('비타민 B5 (mg)'),
+                            "콜린(mg)": get_val('콜린 (mg)'),
+                            "요오드(mcg)": get_val('요오드 (mcg)'),
+                            "철분(mg)": get_val('철분 (mg)'),
+                            "아연(mg)": get_val('아연 (mg)'),
+                            "마그네슘(mg)": get_val('마그네슘 (mg)'),
+                            "셀레늄(mcg)": get_val('셀레늄 (mcg)'),
+                            "구리(mcg)": get_val('구리 (mcg)'),
+                            "망간(mg)": get_val('망간 (mg)'),
+                            "크롬(mcg)": get_val('크롬 (mcg)'),
+                            "소듐(mg)": get_val('소듐 (mg)'),
+                            "포타슘(mg)": get_val('포타슘 (mg)'),
+                            "인(mg)": get_val('인 (mg)'),
+                            "D-감마 토코페롤(mg)": get_val('D-감마 토코페롤 (mg)'),
+                            "붕소(mg)": get_val('붕소 (mg)'),
+                            "몰리브덴(mcg)": get_val('몰리브덴 (mcg)'),
+                            "프로바이오틱스(CFU)": get_val('프로바이오틱스 (CFU)'),
+                            "칼슘(mg)": get_val('칼슘 (mg)'),
+                            "EPA + DHA(mg)": get_val('EPA + DHA (mg)'),
+                            "단백질(g)": get_val('단백질 (g)'),
+                            "루테인(mg)": get_val('루테인 (mg)'),
+                            "총지아잔틴(mg)": get_val('총지아잔틴 (mg)'),
+                            "아스타잔틴(mg)": get_val('아스타잔틴 (mg)'),
+                            "L-류신(mg)": get_val('L-류신 (mg)'),
+                            "L-글루타민(mg)": get_val('L-글루타민 (mg)'),
+                            "L-이소류신(mg)": get_val('L-이소류신 (mg)'),
+                            "L-발린(mg)": get_val('L-발린 (mg)')
                         }
-                    }
+                    })
 
-                    self.db.append(item)
+            print(
+                f"✅ 데이터베이스 로드 성공! "
+                f"총 {len(self.db)}개 품목 매핑 완료."
+            )
 
-            print(f"✅ 데이터 로드 완료 ({len(self.db)}개 제품)")
+        except FileNotFoundError:
+
+            print(
+                "❌ supplements_db.csv 파일을 찾을 수 없습니다."
+            )
 
         except Exception as e:
-            print("❌ CSV 로드 실패")
-            print(e)
 
-    # -----------------------------------------------------
-    # 제품 장바구니 추가
-    # -----------------------------------------------------
+            print(
+                f"❌ CSV 파일 로드 중 오류 발생: {e}"
+            )
+
     def add_to_cart(self, item):
 
-        self.cart.append(item["name"])
+        self.cart.append(item['name'])
 
-        nutrients = item["nutrients"]
+        for key, value in item['nutrients'].items():
 
-        # 누적
-        for nutrient, value in nutrients.items():
+            if key not in self.current_nutrients:
+                self.current_nutrients[key] = 0.0
 
-            # SAFE_LIMITS에 있는 영양소만 누적
-            if nutrient in self.current_nutrients:
-                self.current_nutrients[nutrient] += value
+            self.current_nutrients[key] += value
 
-    # -----------------------------------------------------
-    # 초기화
-    # -----------------------------------------------------
+    def set_profile(self, gender, height, weight):
+
+        self.gender = gender
+        self.height = height
+        self.weight = weight
+
+        height_m = height / 100.0
+
+        if height_m > 0:
+
+            self.bmi = round(
+                weight / (height_m ** 2),
+                1
+            )
+
+        else:
+            self.bmi = 0.0
+
+        # 단백질 상한 동적 계산
+        max_protein = round(weight * 2.0, 1)
+
+        SAFE_LIMITS["남성"]["단백질(g)"] = max_protein
+        SAFE_LIMITS["여성"]["단백질(g)"] = max_protein
+
+        print(
+            f"⚙️ 단백질 상한선 설정 완료 "
+            f"({max_protein}g)"
+        )
+
+        self.reset()
+
     def reset(self):
 
         self.cart = []
 
-        for nutrient in self.current_nutrients:
-            self.current_nutrients[nutrient] = 0.0
+        self.current_nutrients = {
+
+            key: 0.0
+            for key in SAFE_LIMITS[self.gender].keys()
+        }
 
 
-# =========================================================
-# [4] UI
-# =========================================================
+# -----------------------------
+# 아두이노 연결
+# -----------------------------
 
-class KioskApp:
+def listen_to_arduino(app_instance, root):
 
-    def __init__(self, root, brain):
+    if not SERIAL_AVAILABLE:
+        return
 
-        self.root = root
+    arduino_port = '/dev/cu.usbmodem31301'
 
-        self.brain = brain
+    try:
 
-        self.root.title("영양제 안전 분석 시스템")
-
-        self.root.geometry("1000x850")
-
-        self.root.configure(bg="#1E1E1E")
-
-        self.content_container = tk.Frame(
-            self.root,
-            bg="#1E1E1E"
+        ser = serial.Serial(
+            arduino_port,
+            115200,
+            timeout=1
         )
 
-        self.content_container.pack(
-            fill="both",
-            expand=True
+        time.sleep(2)
+
+        print(
+            "🔌 아두이노 브릿지 통신 라인 연결 완료."
         )
 
-        # 하단 장바구니
-        self.cart_bar = tk.Frame(
-            self.root,
-            bg="#2D2D2D",
-            height=100
+        while True:
+
+            if ser.in_waiting > 0:
+
+                scanned_data = (
+                    ser.readline()
+                    .decode(
+                        'utf-8-sig',
+                        errors='ignore'
+                    )
+                    .strip()
+                )
+
+                if (
+                    scanned_data and
+                    scanned_data != "SYSTEM_READY"
+                ):
+
+                    print(
+                        f"📷 스캔 데이터 수신: "
+                        f"{scanned_data}"
+                    )
+
+                    matched_item = None
+
+                    for item in app_instance.brain.db:
+
+                        # 기존 in 비교 제거
+                        if (
+                            scanned_data.lower().strip()
+                            ==
+                            item['name'].lower().strip()
+                        ):
+
+                            matched_item = item
+                            break
+
+                    if matched_item:
+
+                        # Tkinter 메인스레드 안전 처리
+                        root.after(
+                            0,
+                            lambda m=matched_item:
+                            app_instance.handle_product_selection(m)
+                        )
+
+    except serial.SerialException as e:
+
+        print(
+            f"⚠️ 시리얼 연결 실패: {e}"
         )
 
-        self.cart_bar.pack(
-            side="bottom",
-            fill="x"
+    except Exception as e:
+
+        print(
+            f"⚠️ 아두이노 연결 오류: {e}"
         )
 
-        self.cart_items_label = tk.Label(
-            self.cart_bar,
-            text="🛒 선택 목록: 비어 있음",
-            font=("Helvetica", 13),
-            fg="#00FFCC",
-            bg="#2D2D2D",
-            padx=20
-        )
 
-        self.cart_items_label.pack(pady=25)
+# -----------------------------
+# 메인 시작
+# -----------------------------
 
-        self.show_start_page()
+def start_main_kiosk_system(root, brain):
 
-    # -----------------------------------------------------
-    def clear_frame(self):
+    app = KioskApp(
+        root,
+        brain,
+        SAFE_LIMITS
+    )
 
-        for widget in self.content_container.winfo_children():
-            widget.destroy()
+    serial_thread = threading.Thread(
+        target=listen_to_arduino,
+        args=(app, root),
+        daemon=True
+    )
 
-    # -----------------------------------------------------
-    def update_cart_display(self):
+    serial_thread.start()
 
-        text = " | ".join(self.brain.cart)
 
-        if text == "":
-            text = "비어 있음"
+# -----------------------------
+# 실행
+# -----------------------------
 
-        self.cart_items_label.config(
-            text=f"🛒 선택 목록: {text}"
-        )
-
-    # -----------------------------------------------------
-    def show_start_page(self):
-
-        self.clear_frame()
-
-        self.brain.reset()
-
-        self.update_cart_display()
-
-        tk.Label(
-            self.content_container,
-            text="💊\nSAFE NUTRI-CHECK",
-            font=("Helvetica", 50, "bold"),
-            fg="#00FFCC",
-            bg="#1E1E1E"
-        ).pack(pady=80)
-
-        tk.Button(
-            self.content_container,
-            text="키오스크 시작",
-            font=("Helvetica", 22, "bold"),
-            command=self.show_gender_page,
-            bg="#00FFCC",
-            width=15,
-            height=2
-        ).pack()
-
-    # -----------------------------------------------------
-    def show_gender_page(self):
-
-        self.clear_frame()
-
-        tk.Label(
-            self.content_container,
-            text="사용자의 성별을 선택하세요",
-            font=("Helvetica", 30),
-            fg="white",
-            bg="#1E1E1E"
-        ).pack(pady=80)
-
-        btn_frame = tk.Frame(
-            self.content_container,
-            bg="#1E1E1E"
-        )
-
-        btn_frame.pack()
-
-        tk.Button(
-            btn_frame,
-            text="남성",
-            font=("Helvetica", 18),
-            width=15,
-            height=2,
-            command=lambda: self.set_gender("남성")
-        ).pack(side="left", padx=20)
-
-        tk.Button(
-            btn_frame,
-            text="여성",
-            font=("Helvetica", 18),
-            width=15,
-            height=2,
-            command=lambda: self.set_gender("여성")
-        ).pack(side="left", padx=20)
-
-    # -----------------------------------------------------
-    def set_gender(self, gender):
-
-        self.brain.gender = gender
-
-        self.show_category_page()
-
-    # -----------------------------------------------------
-    def show_category_page(self):
-
-        self.clear_frame()
-
-        self.update_cart_display()
-
-        tk.Label(
-            self.content_container,
-            text=f"[{self.brain.gender}] 영양제 종류 선택",
-            font=("Helvetica", 25),
-            fg="#00FFCC",
-            bg="#1E1E1E"
-        ).pack(pady=30)
-
-        categories = sorted(
-            list(
-                set(item["category"] for item in self.brain.db)
-            )
-        )
-
-        grid_frame = tk.Frame(
-            self.content_container,
-            bg="#1E1E1E"
-        )
-
-        grid_frame.pack(pady=10)
-
-        for i, cat in enumerate(categories):
-
-            btn = tk.Button(
-                grid_frame,
-                text=cat,
-                font=("Helvetica", 14),
-                width=18,
-                height=2,
-                command=lambda c=cat: self.show_brand_page(c)
-            )
-
-            btn.grid(
-                row=i // 3,
-                column=i % 3,
-                padx=10,
-                pady=10
-            )
-
-        tk.Button(
-            self.content_container,
-            text="🚀 분석 리포트 확인",
-            font=("Helvetica", 18, "bold"),
-            bg="#FFCC00",
-            fg="black",
-            padx=30,
-            pady=15,
-            command=self.show_result_page
-        ).pack(side="bottom", pady=40)
-
-    # -----------------------------------------------------
-    def show_brand_page(self, category):
-
-        self.clear_frame()
-
-        tk.Label(
-            self.content_container,
-            text=f"[{category}] 제품 목록",
-            font=("Helvetica", 22),
-            fg="white",
-            bg="#1E1E1E"
-        ).pack(pady=30)
-
-        products = [
-            item for item in self.brain.db
-            if item["category"] == category
-        ]
-
-        list_frame = tk.Frame(
-            self.content_container,
-            bg="#1E1E1E"
-        )
-
-        list_frame.pack(pady=10)
-
-        for prod in products:
-
-            btn = tk.Button(
-                list_frame,
-                text=prod["name"],
-                font=("Helvetica", 14),
-                width=55,
-                pady=10,
-                command=lambda p=prod: [
-                    self.brain.add_to_cart(p),
-                    self.update_cart_display(),
-                    self.show_category_page()
-                ]
-            )
-
-            btn.pack(pady=5)
-
-        tk.Button(
-            self.content_container,
-            text="🔙 뒤로 가기",
-            command=self.show_category_page
-        ).pack(pady=20)
-
-    # -----------------------------------------------------
-    def show_result_page(self):
-
-        self.clear_frame()
-
-        tk.Label(
-            self.content_container,
-            text="📊 영양 성분 분석 결과",
-            font=("Helvetica", 30, "bold"),
-            fg="white",
-            bg="#1E1E1E"
-        ).pack(pady=40)
-
-        res_frame = tk.Frame(
-            self.content_container,
-            bg="#1E1E1E"
-        )
-
-        res_frame.pack(pady=10)
-
-        any_danger = False
-
-        limit_data = SAFE_LIMITS[self.brain.gender]
-
-        for nutrient, limit in limit_data.items():
-
-            val = self.brain.current_nutrients[nutrient]
-
-            if val == 0:
-                continue
-
-            is_over = val > limit
-
-            color = "#E74C3C" if is_over else "#2ECC71"
-
-            if is_over:
-                any_danger = True
-
-            status_text = (
-                f"{nutrient}: "
-                f"{val:.1f} / {limit}"
-            )
-
-            tk.Label(
-                res_frame,
-                text=status_text,
-                font=("Helvetica", 18, "bold"),
-                fg=color,
-                bg="#1E1E1E",
-                pady=8
-            ).pack()
-
-        # 최종 메시지
-        if any_danger:
-
-            final_msg = (
-                "🚨 일부 성분이 상한 섭취량을 초과했습니다!"
-            )
-
-            final_color = "#E74C3C"
-
-        else:
-
-            final_msg = (
-                "✅ 모든 성분이 안전 범위입니다."
-            )
-
-            final_color = "#2ECC71"
-
-        tk.Label(
-            self.content_container,
-            text=final_msg,
-            font=("Helvetica", 22, "bold"),
-            bg=final_color,
-            fg="white",
-            padx=30,
-            pady=20
-        ).pack(pady=30)
-
-        tk.Button(
-            self.content_container,
-            text="🔄 처음으로 돌아가기",
-            font=("Helvetica", 15),
-            command=self.show_start_page,
-            bg="#00FFCC"
-        ).pack(side="bottom", pady=30)
-
-
-# =========================================================
-# [5] 프로그램 실행
-# =========================================================
-
-if __name__ == "__main__":
+if __name__ == '__main__':
 
     root = tk.Tk()
 
-    # =========================================
-    # CSV 파일명 입력
-    # =========================================
-    brain = KioskBrain("supplements_db.csv")
+    root.title(
+        "개인 맞춤형 헬스케어 영양제 키오스크"
+    )
 
-    app = KioskApp(root, brain)
+    root.geometry("800x450")
+
+    root.resizable(False, False)
+
+    root.configure(bg="#000000")
+
+    brain = KioskBrain('supplements_db.csv')
+
+    app = KioskApp(
+        root,
+        brain,
+        SAFE_LIMITS
+    )
+
+    serial_thread = threading.Thread(
+        target=listen_to_arduino,
+        args=(app, root),
+        daemon=True
+    )
+
+    serial_thread.start()
 
     root.mainloop()
