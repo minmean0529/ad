@@ -210,15 +210,15 @@ def scan_item(self, barcode):
  # ========================================================
 def check_warnings(self):
         warnings = []
-        limit_data = SAFE_LIMIT[self.gender]
-        for nutrient, total in self.current_nutrients.items():
+        limit_data = SAFE_LIMITS[self.gender]
+        for nutrient, limit in limit_data.items():
             current_val = self.current_nutrients.get(nutrient, 0)
             if current_val > limit:
                 warnings.append(f"⚠️ {nutrient} 상한선 초과"
                                 f" {current_val:.1f} /  {limit}"
                                )  
             elif current_val > (limit * 0.7):
-                warnings.append(f"⚠️ [주의] {nutrient} 상한선 근접"
+                warnings.append(f"⚠️ [주의] {nutrient} 상한선  근접"
                                 f" {current_val:.1f} /  {limit}"
                                ) 
         for rule in INTERACTION_RULES:
@@ -238,7 +238,7 @@ def check_warnings(self):
  #=========================================================
  # 시리얼 스레드
  # =========================================================
- def serial_worker(brain):
+def serial_worker(brain):
     if not SERIAL_AVAILABLE:
         return
     try:
