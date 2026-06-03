@@ -3,10 +3,13 @@ from tkinter import messagebox
 import csv
 import threading
 import time
+import sys
 
+# 외부 UI 모듈 (kiosk_ui.py 가 같은 폴더에 있어야 합니다)
 from kiosk_ui import KioskApp
+
 # ========================================================= 
-# 시리얼 연결 
+# 시리얼(아두이노) 연결 
 # =========================================================
 try:
     import serial
@@ -15,9 +18,9 @@ except ImportError:
     SERIAL_AVAILABLE = False
     print("💡 [시스템 알림] pyserial 라이브러리가 감지되지 않아 가상 모드로 전환합니다.")
 
-
-# 대한민국 식약처 및 의학 기준 영양소 일일 상한 섭취량 (UL)
-# 💡 단백질은 고정값이 아니라 하단에서 사용자의 몸무게를 기반으로 자동 재계산됩니다.
+# ========================================================= 
+# 데이터베이스 (상한선 및 상호작용 규칙)
+# =========================================================
 SAFE_LIMITS = {
     "남성": {
         "베타카로틴(mcg)": 7000.0, "비타민A(mcg)": 3000.0, "비타민C(mg)": 2000.0, 
@@ -53,42 +56,42 @@ SAFE_LIMITS = {
     }
 }
 
-INTERACTION_RULES = [ { "nutrients": ["철분(mg)", "칼슘(mg)"], "type": "위험", "message": "철분과 칼슘은 동일한 흡수 통로(DMT1)를 사용하여 서로의 흡수를 방해할 수 있습니다." }, 
-                      { "nutrients": ["철분(mg)", "아연(mg)"], "type": "위험", "message": "철분과 아연은 미네랄 간 흡수 경쟁이 발생하여 흡수 효율이 감소할 수 있습니다." }, 
-                      { "nutrients": ["철분(mg)", "마그네슘(mg)"], "type": "위험", "message": "철분과 마그네슘을 함께 복용하면 철분 흡수율이 감소하고 소화 장애가 발생할 수 있습니다." }, 
-                      { "nutrients": ["철분(mg)", "단백질(g)"], "type": "주의", "message": "단백질 보충제에 포함된 칼슘·아연·마그네슘 등이 철분 흡수를 방해할 수 있습니다." }, 
-                      { "nutrients": ["칼슘(mg)", "마그네슘(mg)"], "type": "주의", "message": "칼슘과 마그네슘을 고함량으로 동시에 복용하면 흡수 경쟁이 발생할 수 있습니다." }, 
-                      { "nutrients": ["칼슘(mg)", "아연(mg)"], "type": "주의", "message": "고용량 칼슘은 아연의 체내 흡수를 방해할 수 있습니다." }, 
-                      { "nutrients": ["비타민D(mcg)", "칼슘(mg)"], "type": "주의", "message": "비타민D는 칼슘 흡수를 증가시키므로 과다 복용 시 혈중 칼슘 농도가 높아질 수 있습니다." }, 
-                      { "nutrients": ["비타민C(mg)", "비타민B12(mcg)"], "type": "주의", "message": "고용량 비타민C는 비타민B12의 안정성 및 흡수를 방해할 수 있습니다." }, 
-                      { "nutrients": ["비타민D(mcg)", "비타민A(mcg)"], "type": "위험", "message": "비타민A 과다 복용은 비타민D 작용을 방해할 수 있으며 간독성·두통·탈모·뼈 약화 위험이 있습니다." }, 
-                      { "nutrients": ["비타민C(mg)", "마그네슘(mg)"], "type": "주의", "message": "비타민C와 마그네슘을 고용량으로 함께 복용하면 설사나 속 쓰림이 발생할 수 있습니다." }, 
-                      { "nutrients": ["프로바이오틱스(CFU)", "비타민C(mg)"], "type": "주의", "message": "강한 산성 환경으로 인해 유산균 생존율이 감소할 수 있습니다." }, 
-                      { "nutrients": ["EPA+DHA(mg)", "비타민E(mgα-TE)"], "type": "주의", "message": "고함량으로 함께 복용 시 멍·코피·출혈 위험이 증가할 수 있습니다." }, 
-                      { "nutrients": ["비타민A(mcg)", "루테인(mg)"], "type": "추천", "message": "비타민A와 루테인은 모두 눈 건강에 도움을 주는 성분으로 기능이 일부 유사합니다." } ]
+INTERACTION_RULES = [ 
+    { "nutrients": ["철분(mg)", "칼슘(mg)"], "type": "위험", "message": "철분과 칼슘은 동일한 흡수 통로(DMT1)를 사용하여 서로의 흡수를 방해할 수 있습니다." }, 
+    { "nutrients": ["철분(mg)", "아연(mg)"], "type": "위험", "message": "철분과 아연은 미네랄 간 흡수 경쟁이 발생하여 흡수 효율이 감소할 수 있습니다." }, 
+    { "nutrients": ["철분(mg)", "마그네슘(mg)"], "type": "위험", "message": "철분과 마그네슘을 함께 복용하면 철분 흡수율이 감소하고 소화 장애가 발생할 수 있습니다." }, 
+    { "nutrients": ["철분(mg)", "단백질(g)"], "type": "주의", "message": "단백질 보충제에 포함된 칼슘·아연·마그네슘 등이 철분 흡수를 방해할 수 있습니다." }, 
+    { "nutrients": ["칼슘(mg)", "마그네슘(mg)"], "type": "주의", "message": "칼슘과 마그네슘을 고함량으로 동시에 복용하면 흡수 경쟁이 발생할 수 있습니다." }, 
+    { "nutrients": ["칼슘(mg)", "아연(mg)"], "type": "주의", "message": "고용량 칼슘은 아연의 체내 흡수를 방해할 수 있습니다." }, 
+    { "nutrients": ["비타민D(mcg)", "칼슘(mg)"], "type": "주의", "message": "비타민D는 칼슘 흡수를 증가시키므로 과다 복용 시 혈중 칼슘 농도가 높아질 수 있습니다." }, 
+    { "nutrients": ["비타민C(mg)", "비타민B12(mcg)"], "type": "주의", "message": "고용량 비타민C는 비타민B12의 안정성 및 흡수를 방해할 수 있습니다." }, 
+    { "nutrients": ["비타민D(mcg)", "비타민A(mcg)"], "type": "위험", "message": "비타민A 과다 복용은 비타민D 작용을 방해할 수 있으며 간독성·두통·탈모·뼈 약화 위험이 있습니다." }, 
+    { "nutrients": ["비타민C(mg)", "마그네슘(mg)"], "type": "주의", "message": "비타민C와 마그네슘을 고용량으로 함께 복용하면 설사나 속 쓰림이 발생할 수 있습니다." }, 
+    { "nutrients": ["프로바이오틱스(CFU)", "비타민C(mg)"], "type": "주의", "message": "강한 산성 환경으로 인해 유산균 생존율이 감소할 수 있습니다." }, 
+    { "nutrients": ["EPA+DHA(mg)", "비타민E(mgα-TE)"], "type": "주의", "message": "고함량으로 함께 복용 시 멍·코피·출혈 위험이 증가할 수 있습니다." }, 
+    { "nutrients": ["비타민A(mcg)", "루테인(mg)"], "type": "추천", "message": "비타민A와 루테인은 모두 눈 건강에 도움을 주는 성분으로 기능이 일부 유사합니다." } 
+]
 
-#=========================================================
-#안전한 숫자 변환
-#=========================================================
-
+# =========================================================
+# 안전한 숫자 변환 헬퍼 함수
+# =========================================================
 def safe_float(val):
     try:
-        if value is None:
+        if val is None:
             return 0.0
-        value = str(value).strip()
-        if value == '':
+        val = str(val).strip()
+        if val == '':
             return 0.0
-        return float(value)
+        return float(val)
     except:
         return 0.0
-#=========================================================
-# 메인 엔진
-# =========================================================
-   
 
+# =========================================================
+# 메인 엔진 (두 분의 코드를 결합하여 완성한 두뇌 클래스)
+# =========================================================
 class KioskBrain:
     def __init__(self, csv_file_path):
-        self.db = {}
+        self.db = {} # 질문자님 코드 반영: 바코드를 Key로 사용하는 딕셔너리
         self.cart = []
         self.current_nutrients = {}
         self.latest_warnings = []
@@ -98,165 +101,71 @@ class KioskBrain:
         self.bmi = 0.0  
         self.load_data(csv_file_path)
 
- #=========================================================
- # 초기화
- # =========================================================
-
-def reset(self):
-        self.cart = []
-        self.current_nutrients = {}
-        self.latest_warnings = []
-
-#=========================================================
-# csv 로드
-# =========================================================
-#     
-        
-
-def load_data(self, file_path):
+    def load_data(self, file_path):
         try:
             with open(file_path, 'r', encoding='utf-8-sig') as f:
                 reader = csv.DictReader(f)
                 for row in reader:
                     barcode = row.get("바코드", "").strip()
-
                     if barcode == "":
                         continue
                     
                     self.db[barcode] = {
                         "barcode": barcode,
                         "name": row['제품명 (브랜드)'].strip(),
-                        "category": row['카테고리'].strip(),
-                        "brand": row['브랜드'].strip(),       
+                        "category": row['카테고리'].strip() if '카테고리' in row else "",
+                        "brand": row['브랜드'].strip() if '브랜드' in row else "",       
                         "nutrients": {
                             "베타카로틴(mcg)": safe_float(row.get('베타카로틴 (mcg)', 0)),
-                            "비타민A(mcg)": safe_float(row.get('비타민 A (mcg)',0)),
-                            "비타민C(mg)": safe_float(row.get('비타민 C (mg)',0)),
-                            "비타민D(mcg)": safe_float(row.get('비타민 D (mcg)',0)),
-                            "식물성 비타민D2(mcg)": safe_float(row.get('식물성 비타민 D2 (mcg)',0)),
-                            "동물성 비타민D3(mcg)": safe_float(row.get('동물성 비타민 D3 (mcg)',0)),
-                            "비타민E(mgα-TE)": safe_float(row.get('비타민 E (mgα-TE)',0)),
-                            "비타민K(mcg)": safe_float(row.get('비타민 K (mcg)',0)),
-                            "비타민B1(mg)": safe_float(row.get('비타민 B1 (mg)',0)),
-                            "비타민B2(mg)": safe_float(row.get('비타민 B2 (mg)',0)),
-                            "비타민B3(mg)": safe_float(row.get('비타민 B3 (mg)',0)),
-                            "비타민B6(mg)": safe_float(row.get('비타민 B6 (mg)',0)),
-                            "비타민B9(mcg DFE)": safe_float(row.get('비타민 B9 (mcg DFE)',0)),
-                            "비타민B12(mcg)": safe_float(row.get('비타민 B12 (mcg)',0)),
-                            "비타민B7(mcg)": safe_float(row.get('비타민 B7 (mcg)',0)),
-                            "비타민B5(mg)": safe_float(row.get('비타민 B5 (mg)',0)),
-                            "콜린(mg)": safe_float(row.get('콜린 (mg)',0)),
-                            "요오드(mcg)": safe_float(row.get('요오드 (mcg)',0)),
-                            "철분(mg)": safe_float(row.get('철분 (mg)',0)),
-                            "아연(mg)": safe_float(row.get('아연 (mg)',0)),
-                            "마그네슘(mg)":safe_float(row.get('마그네슘 (mg)',0)),
-                            "셀레늄(mcg)": safe_float(row.get('셀레늄 (mcg)',0)),
-                            "구리(mcg)": safe_float(row.get('구리 (mcg)',0)),
-                            "망간(mg)":safe_float(row.get('망간 (mg)',0)),
-                            "크롬(mcg)": safe_float(row.get('크롬 (mcg)',0)),
-                            "소듐(mg)": safe_float(row.get('소듐 (mg)',0)),
-                            "포타슘(mg)": safe_float(row.get('포타슘 (mg)',0)),
-                            "인(mg)": safe_float(row.get('인 (mg)',0)),
-                            "D-감마 토코페롤(mg)": safe_float(row.get('D-감마 토코페롤 (mg)',0)),
-                            "붕소(mg)": safe_float(row.get('붕소 (mg)',0)),
-                            "몰리브덴(mcg)": safe_float(row.get('몰리브덴 (mcg)',0)),
-                            "프로바이오틱스(CFU)": safe_float(row.get('프로바이오틱스 (CFU)',0)),
-                            "칼슘(mg)": safe_float(row.get('칼슘 (mg)',0)),
-                            "EPA + DHA(mg)": safe_float(row.get('EPA + DHA (mg)',0)),
-                            "단백질(g)": safe_float(row.get('단백질 (g)',0)),
-                            "루테인(mg)": safe_float(row.get('루테인 (mg)',0)),
-                            "총지아잔틴(mg)": safe_float(row.get('총지아잔틴 (mg)',0)),
-                            "아스타잔틴(mg)": safe_float(row.get('아스타잔틴 (mg)',0)),
-                            "L-류신(mg)": safe_float(row.get('L-류신 (mg)',0)),
-                            "L-글루타민(mg)": safe_float(row.get('L-글루타민 (mg)',0)),
-                            "L-이소류신(mg)": safe_float(row.get('L-이소류신 (mg)',0)),
-                            "L-발린(mg)": safe_float(row.get('L-발린 (mg)',0))
+                            "비타민A(mcg)": safe_float(row.get('비타민 A (mcg)', 0)),
+                            "비타민C(mg)": safe_float(row.get('비타민 C (mg)', 0)),
+                            "비타민D(mcg)": safe_float(row.get('비타민 D (mcg)', 0)),
+                            "식물성 비타민D2(mcg)": safe_float(row.get('식물성 비타민 D2 (mcg)', 0)),
+                            "동물성 비타민D3(mcg)": safe_float(row.get('동물성 비타민 D3 (mcg)', 0)),
+                            "비타민E(mgα-TE)": safe_float(row.get('비타민 E (mgα-TE)', 0)),
+                            "비타민K(mcg)": safe_float(row.get('비타민 K (mcg)', 0)),
+                            "비타민B1(mg)": safe_float(row.get('비타민 B1 (mg)', 0)),
+                            "비타민B2(mg)": safe_float(row.get('비타민 B2 (mg)', 0)),
+                            "비타민B3(mg)": safe_float(row.get('비타민 B3 (mg)', 0)),
+                            "비타민B6(mg)": safe_float(row.get('비타민 B6 (mg)', 0)),
+                            "비타민B9(mcg DFE)": safe_float(row.get('비타민 B9 (mcg DFE)', 0)),
+                            "비타민B12(mcg)": safe_float(row.get('비타민 B12 (mcg)', 0)),
+                            "비타민B7(mcg)": safe_float(row.get('비타민 B7 (mcg)', 0)),
+                            "비타민B5(mg)": safe_float(row.get('비타민 B5 (mg)', 0)),
+                            "콜린(mg)": safe_float(row.get('콜린 (mg)', 0)),
+                            "요오드(mcg)": safe_float(row.get('요오드 (mcg)', 0)),
+                            "철분(mg)": safe_float(row.get('철분 (mg)', 0)),
+                            "아연(mg)": safe_float(row.get('아연 (mg)', 0)),
+                            "마그네슘(mg)": safe_float(row.get('마그네슘 (mg)', 0)),
+                            "셀레늄(mcg)": safe_float(row.get('셀레늄 (mcg)', 0)),
+                            "구리(mcg)": safe_float(row.get('구리 (mcg)', 0)),
+                            "망간(mg)": safe_float(row.get('망간 (mg)', 0)),
+                            "크롬(mcg)": safe_float(row.get('크롬 (mcg)', 0)),
+                            "소듐(mg)": safe_float(row.get('소듐 (mg)', 0)),
+                            "포타슘(mg)": safe_float(row.get('포타슘 (mg)', 0)),
+                            "인(mg)": safe_float(row.get('인 (mg)', 0)),
+                            "D-감마 토코페롤(mg)": safe_float(row.get('D-감마 토코페롤 (mg)', 0)),
+                            "붕소(mg)": safe_float(row.get('붕소 (mg)', 0)),
+                            "몰리브덴(mcg)": safe_float(row.get('몰리브덴 (mcg)', 0)),
+                            "프로바이오틱스(CFU)": safe_float(row.get('프로바이오틱스 (CFU)', 0)),
+                            "칼슘(mg)": safe_float(row.get('칼슘 (mg)', 0)),
+                            "EPA + DHA(mg)": safe_float(row.get('EPA + DHA (mg)', 0)),
+                            "단백질(g)": safe_float(row.get('단백질 (g)', 0)),
+                            "루테인(mg)": safe_float(row.get('루테인 (mg)', 0)),
+                            "총지아잔틴(mg)": safe_float(row.get('총지아잔틴 (mg)', 0)),
+                            "아스타잔틴(mg)": safe_float(row.get('아스타잔틴 (mg)', 0)),
+                            "L-류신(mg)": safe_float(row.get('L-류신 (mg)', 0)),
+                            "L-글루타민(mg)": safe_float(row.get('L-글루타민 (mg)', 0)),
+                            "L-이소류신(mg)": safe_float(row.get('L-이소류신 (mg)', 0)),
+                            "L-발린(mg)": safe_float(row.get('L-발린 (mg)', 0))
                         }
                     }
             print(f"✅ 데이터베이스 로드 성공! 총 {len(self.db)}개 품목 매핑 완료.")
         except Exception as e:
             print(f"❌ CSV 파일 로드 중 오류 발생: {e}")
             sys.exit(1)
- #=========================================================
- # 영양소 누적
- # =========================================================
-def accumulate_nutrients(self, item):
-        for nutrient, value in item['nutrients'].items():
-           if nutrient not in self.current_nutrients: 
-               self.current_nutrients[nutrient] = 0.0
-           self.current_nutrients[nutrient] += value
 
-#=========================================================
-# 장바구니 추가
-# =========================================================       
-
-def add_to_cart(self, item):
-        self.cart.append(item)
-        self.accumulate_nutrients(item)
-        self.check_warnings()
-#=========================================================
-#바코드 스캔
-#=========================================================
-def scan_item(self, barcode):
-       
-       if barcode not in self.db:
-           return "⚠️ 등록되지 않은 제품입니다. 다른 제품을 스캔해 주세요."
-       item = self.db[barcode]
-       self.add_to_cart(item)
-       return f"✅ [{item['name']}] 스캔완료"
-    
- #=========================================================
- # 경고 검사
- # ========================================================
-def check_warnings(self):
-        warnings = []
-        limit_data = SAFE_LIMITS[self.gender]
-        for nutrient, limit in limit_data.items():
-            current_val = self.current_nutrients.get(nutrient, 0)
-            if current_val > limit:
-                warnings.append(f"⚠️ {nutrient} 상한선 초과"
-                                f" {current_val:.1f} /  {limit}"
-                               )  
-            elif current_val > (limit * 0.7):
-                warnings.append(f"⚠️ [주의] {nutrient} 상한선  근접"
-                                f" {current_val:.1f} /  {limit}"
-                               ) 
-        for rule in INTERACTION_RULES:
-            found = True
-            for nutrient in rule['nutrients']:
-                if self.current_nutrients.get(nutrient, 0) <= 0:
-                    found = False
-                    break          
-            if found:
-                if rule["type"] == "위험":
-                    warnings.append(f"⚠️ [영양소 충돌] {rule['message']}")
-                elif rule["type"] == "주의":
-                    warnings.append(f"⚠️ [주의조합] {rule['message']}") 
-                elif rule["type"] == "추천":  
-                    warnings.append(f"✅ [추천 조합] {rule['message']}")
-        self.latest_warnings = warnings
- #=========================================================
- # 시리얼 스레드
- # =========================================================
-def serial_worker(brain):
-    if not SERIAL_AVAILABLE:
-        return
-    try:
-        arduino = serial.Serial('COM3', 9600, timeout=1)
-        time.sleep(2)
-        print("아두이노 연결 완료")
-        while True:
-            if arduino.in_wainting:
-                barcode = arduino.readline().decode().strip()
-
-                if barcode:
-                    result = brain.scan_item(barcode)
-                    print(result)
-            time.sleep(0.1)
-    except Exception as e:
-        print(f"시리얼 연결 실패: {e}")      
-
-def set_profile(self, gender, height, weight):
+    def set_profile(self, gender, height, weight):
         self.gender = gender
         self.height = height
         self.weight = weight
@@ -266,34 +175,86 @@ def set_profile(self, gender, height, weight):
         else:
             self.bmi = 0.0
             
-        # 💡 [핵심 구현] 사용자의 몸무게를 기반으로 단백질 하루 최대 상한선을 동적 갱신 (체중 * 2.0g)
+        # 친구분 코드 반영: 사용자의 몸무게를 기반으로 단백질 하루 최대 상한선을 동적 갱신
         max_protein = round(weight * 2.0, 1)
         SAFE_LIMITS["남성"]["단백질(g)"] = max_protein
         SAFE_LIMITS["여성"]["단백질(g)"] = max_protein
         print(f"⚙️ 단백질 상한선 동적 설정 완료: 체중 {weight}kg -> 일일 최대 {max_protein}g")
-        
         self.reset()
 
-   
+    def reset(self):
+        self.cart = []
+        self.current_nutrients = {}
+        self.latest_warnings = []
 
+    def accumulate_nutrients(self, item):
+        for nutrient, value in item['nutrients'].items():
+            if nutrient not in self.current_nutrients: 
+                self.current_nutrients[nutrient] = 0.0
+            self.current_nutrients[nutrient] += value
+
+    def add_to_cart(self, item):
+        self.cart.append(item)
+        self.accumulate_nutrients(item)
+        self.check_warnings()
+        return self.latest_warnings
+
+    def scan_item(self, barcode):
+        if barcode not in self.db:
+            return {"status": "error", "message": "⚠️ 등록되지 않은 제품입니다. 다른 제품을 스캔해 주세요."}
+        
+        item = self.db[barcode]
+        self.add_to_cart(item)
+        return {"status": "success", "message": f"✅ [{item['name']}] 스캔 완료", "item": item}
+
+    def check_warnings(self):
+        warnings = []
+        limit_data = SAFE_LIMITS[self.gender]
+        
+        # 1. 상한선 초과 및 근접 검사
+        for nutrient, limit in limit_data.items():
+            current_val = self.current_nutrients.get(nutrient, 0)
+            if current_val > limit:
+                warnings.append(f"⚠️ [초과] {nutrient} 상한선 초과 ({current_val:.1f} / {limit})")  
+            elif current_val > (limit * 0.7):
+                warnings.append(f"⚠️ [주의] {nutrient} 상한선 근접 ({current_val:.1f} / {limit})") 
+                
+        # 2. 성분 조합 상호작용 검사
+        for rule in INTERACTION_RULES:
+            found = True
+            for nutrient in rule['nutrients']:
+                if self.current_nutrients.get(nutrient, 0) <= 0:
+                    found = False
+                    break          
+            if found:
+                if rule["type"] == "위험":
+                    warnings.append(f"🚨 [영양소 충돌] {rule['message']}")
+                elif rule["type"] == "주의":
+                    warnings.append(f"⚠️ [주의조합] {rule['message']}") 
+                elif rule["type"] == "추천":  
+                    warnings.append(f"✅ [추천조합] {rule['message']}")
+                    
+        self.latest_warnings = warnings
+
+
+# =========================================================
+# UI 가이드 플로우 (친구분 코드 그대로 유지)
+# =========================================================
 class KioskGuideFlow:
     def __init__(self, root, brain, on_complete_callback):
         self.root = root
         self.brain = brain
         self.on_complete = on_complete_callback
-        
         self.gender = "남성"
         self.height_str = ""
         self.weight_str = ""
         
         self.frame = tk.Frame(root, bg="#000000")
         self.frame.pack(fill="both", expand=True)
-        
         self.show_privacy_screen()
 
     def show_privacy_screen(self):
         self.clear_frame()
-        
         center_container = tk.Frame(self.frame, bg="#000000")
         center_container.pack(expand=True)
         
@@ -304,15 +265,10 @@ class KioskGuideFlow:
         text_frame.pack(pady=5, padx=20, fill="both", expand=True)
         
         privacy_text = (
-            "▶ 수집·이용 목적\n"
-            "   키오스크 기반 맞춤형 영양소 추천 서비스 제공\n\n"
-            "▶ 수집하는 항목\n"
-            "   성별, 키, 몸무게\n\n"
-            "▶ 보유 및 이용 기간\n"
-            "   키오스크 이용일로부터 1년 보관 후 파기\n\n"
-            "▶ 동의 거부 권리 및 불이익\n"
-            "   귀하는 동의를 거부할 권리가 있으나, 거부 시\n"
-            "   맞춤형 영양소 추천 서비스 이용이 제한됩니다."
+            "▶ 수집·이용 목적\n   키오스크 기반 맞춤형 영양소 추천 서비스 제공\n\n"
+            "▶ 수집하는 항목\n   성별, 키, 몸무게\n\n"
+            "▶ 보유 및 이용 기간\n   키오스크 이용일로부터 1년 보관 후 파기\n\n"
+            "▶ 동의 거부 권리 및 불이익\n   귀하는 동의를 거부할 권리가 있으나, 거부 시\n   맞춤형 영양소 추천 서비스 이용이 제한됩니다."
         )
         
         text_label = tk.Label(text_frame, text=privacy_text, font=("Noto Sans KR", 11), fg="#FFFFFF", bg="#151515", justify="left", anchor="w", padx=15, pady=15)
@@ -336,7 +292,6 @@ class KioskGuideFlow:
     def show_gender_screen(self):
         self.clear_frame()
         self.current_step = "GENDER"
-        
         title = tk.Label(self.frame, text="성별을 선택해 주세요", font=("Noto Sans KR", 20, "bold"), fg="#FFFFFF", bg="#000000")
         title.pack(expand=True, pady=(20, 0))
         
@@ -450,7 +405,6 @@ class KioskGuideFlow:
                     raise ValueError
                 
                 self.brain.set_profile(self.gender, h, w)
-                
                 self.frame.destroy()
                 self.on_complete()
                 
@@ -461,53 +415,64 @@ class KioskGuideFlow:
         for widget in self.frame.winfo_children():
             widget.destroy()
 
-
+# =========================================================
+# 아두이노 바코드 스캐너 리스너
+# =========================================================
 def listen_to_arduino(app_instance):
     if not SERIAL_AVAILABLE:
         return
 
-    arduino_port = '/dev/cu.usbmodem31301' 
+    # 본인의 아두이노 포트 환경에 맞게 수정해주세요 (예: 윈도우는 'COM3', 맥은 '/dev/cu.usbmodem31301' 등)
+    arduino_port = 'COM3' 
     try:
-        ser = serial.Serial(arduino_port, 115200, timeout=1)
+        ser = serial.Serial(arduino_port, 9600, timeout=1)
         time.sleep(2)
-        print("🔌 아두이노 브릿지 통신 라인 연결 완료.")
+        print(f"🔌 아두이노 브릿지 통신 라인 연결 완료 ({arduino_port})")
         
         while True:
             if ser.in_waiting > 0:
-                scanned_data = ser.readline().decode('utf-8-sig').strip()
-                if scanned_data and scanned_data != "SYSTEM_READY":
-                    print(f"📷 스캔 데이터 수신: {scanned_data}")
+                scanned_barcode = ser.readline().decode('utf-8-sig').strip()
+                if scanned_barcode and scanned_barcode != "SYSTEM_READY":
+                    print(f"📷 스캔 데이터 수신: {scanned_barcode}")
                     
-                    matched_item = None
-                    for item in app_instance.brain.db:
-                        if scanned_data.lower() in item['name'].lower():
-                            matched_item = item
-                            break
+                    # 💡 바코드로 데이터 조회 로직 (이름이 아닌 바코드로 직접 매칭)
+                    result = app_instance.brain.scan_item(scanned_barcode)
                     
-                    if matched_item:
-                        app_instance.handle_product_selection(matched_item)
+                    if result["status"] == "success":
+                        print(result["message"])
+                        # UI 앱(kiosk_ui)에 제품이 추가되었음을 알리고 화면을 업데이트하는 메서드 호출
+                        # (kiosk_ui.py 구조에 따라 메서드 이름은 handle_product_selection 등에 맞춰 변경하세요)
+                        if hasattr(app_instance, 'handle_product_selection'):
+                            app_instance.handle_product_selection(result["item"])
+                    else:
+                        print(result["message"])
                         
     except Exception as e:
         print(f"⚠️ 아두이노 시리얼 라인 연결 실패: {e}")
 
-
+# =========================================================
+# 메인 실행부
+# =========================================================
 def start_main_kiosk_system():
+    # kiosk_ui.py의 KioskApp 클래스를 실행
     app = KioskApp(root, brain, SAFE_LIMITS)
     
+    # 아두이노 스레드 시작
     serial_thread = threading.Thread(target=listen_to_arduino, args=(app,), daemon=True)
     serial_thread.start()
-
 
 if __name__ == '__main__':
     root = tk.Tk()
     root.title("개인 맞춤형 헬스케어 영양제 키오스크")
     
-    # 원래 메인 창 크기에 맞춰 변경해 줘! (기본값 800x600 세팅)
     root.geometry("800x450") 
     root.resizable(False, False) 
     root.configure(bg="#000000") 
     
+    # 두뇌(데이터 및 논리 처리) 초기화
     brain = KioskBrain('supplements_db.csv')
+    
+    # 가이드 플로우(UI) 시작
     guide_flow = KioskGuideFlow(root, brain, start_main_kiosk_system)
     
     root.mainloop()
